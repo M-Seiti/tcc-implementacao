@@ -125,19 +125,23 @@ def padronizar(df, fonte):
     tamanho_ok = codigo.str.len() == cfg["digitos"]
     # filtro por prefixo "31", nunca pelo campo de UF: arquivos nacionais já vieram rotulados como MG
     eh_mg = codigo.str.startswith("31", na=False)
+    # "310000"/"3100000" é "município ignorado – MG" no DATASUS: passa no prefixo, mas não é município
+    ignorado = codigo.str[2:6].eq("0000").fillna(False) & eh_mg
     ano = pd.to_numeric(out["ano"], errors="coerce")
     ano_ok = ano.notna() & (ano % 1 == 0) & ano.isin(list(ANOS))
 
     fora_uf = out.loc[tamanho_ok.fillna(False) & ~eh_mg, cfg["col_cod"]]
-    manter = tamanho_ok.fillna(False) & eh_mg & ano_ok
+    manter = tamanho_ok.fillna(False) & eh_mg & ~ignorado & ano_ok
     print(f"\n{cfg['rotulo']}:")
     print(f"  códigos reescritos pela padronização (tipo/'.0'/não-dígitos): {alterados:,}")
     print(f"  removidos por código vazio ou com tamanho != {cfg['digitos']}: "
           f"{int((~tamanho_ok.fillna(False)).sum()):,}")
     print(f"  removidos por não serem de MG (prefixo != 31): {len(fora_uf):,}"
           + (f"  ex.: {sorted(map(str, fora_uf.unique()))[:5]}" if len(fora_uf) else ""))
+    print(f"  removidos por município ignorado (código 31 + 0000): "
+          f"{int((tamanho_ok.fillna(False) & ignorado).sum()):,}")
     print(f"  removidos por ano inválido ou fora de {ANOS.start}–{ANOS.stop - 1}: "
-          f"{int((tamanho_ok.fillna(False) & eh_mg & ~ano_ok).sum()):,}")
+          f"{int((tamanho_ok.fillna(False) & eh_mg & ~ignorado & ~ano_ok).sum()):,}")
 
     out[cfg["col_cod"]] = codigo
     out["ano"] = ano
