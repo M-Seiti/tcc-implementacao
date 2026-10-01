@@ -157,6 +157,11 @@ ordem, e cada etapa imprime o que fez:
 - **Filtro de MG pelo prefixo `31`, nunca por campo de UF da fonte** — já
   comprovamos arquivos nacionais rotulados como estaduais. Mesma regra do
   `transform.py` e do `transform_edu.py`.
+- **Código `310000` / `3100000` é descartado.** No DATASUS ele significa
+  "município ignorado – MG" (residência em MG, município não informado): passa
+  no filtro do prefixo `31`, mas não é município, e apareceria como o 854º na
+  invariante (a). Nenhum município real de MG tem código terminado em `0000`
+  (o primeiro é `310010`). O `indicadores_saude.py` já o exclui na agregação.
 - **Deduplicação por "primeiro não-nulo", nunca soma nem média.** Chave
   repetida é registro repetido, não duas medições legítimas: somar dobraria
   nascidos e matrículas; fazer média inventaria um valor que nenhuma fonte

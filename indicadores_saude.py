@@ -27,9 +27,12 @@ def _chave(df, rotulo):
     # código de 7 dígitos (IBGE) vira 6 tirando o verificador — mesma ponte do merge_fontes
     cod = cod.where(cod.str.len() != 7, cod.str[:6]).str.zfill(6)
     ano = pd.to_numeric(df["ano"], errors="coerce")
-    ok = cod.str.startswith("31", na=False) & (cod.str.len() == 6) & ano.isin(list(ANOS))
+    # "310000" é "município ignorado – MG" no DATASUS, não um município: sairia como o 854º
+    ignorado = cod.eq("310000").fillna(False)
+    ok = cod.str.startswith("31", na=False) & (cod.str.len() == 6) & ~ignorado & ano.isin(list(ANOS))
     print(f"{rotulo}: {len(df):,} registros; descartados {int((~ok).sum()):,} "
-          f"(código fora de MG/inválido ou ano fora de {ANOS.start}–{ANOS.stop - 1})")
+          f"(dos quais {int(ignorado.sum()):,} com município ignorado 310000; o resto com "
+          f"código fora de MG/inválido ou ano fora de {ANOS.start}–{ANOS.stop - 1})")
     out = df[ok].copy()
     out["cod_municipio_6"] = cod[ok]
     out["ano"] = ano[ok].astype("int64")
