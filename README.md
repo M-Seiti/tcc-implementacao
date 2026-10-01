@@ -13,6 +13,7 @@ tcc-saude-educacao/
 ├── extract.py          # saúde etapa 1: PySUS -> data/raw
 ├── transform.py        # saúde etapa 2: seleção de colunas + limpeza -> data/interim
 ├── eda.py              # saúde etapa 3: análise exploratória -> reports/figures
+├── indicadores_saude.py # saúde etapa 4: indicadores município-ano -> data/processed
 ├── extract_edu.py      # educação etapa 1: lê xlsx/csv/zip do INEP em data/raw/edu -> data/raw
 ├── transform_edu.py    # educação etapa 2: limpeza + indicadores município-ano -> data/interim, data/processed
 ├── eda_edu.py           # educação etapa 3: análise exploratória -> reports/figures
@@ -40,6 +41,7 @@ pip install -r requirements.txt
 python extract.py         # baixa do DATASUS (só a 1ª vez é lenta; depois usa cache)
 python transform.py       # limpa
 python eda.py             # explora e gera as figuras
+python indicadores_saude.py  # agrega -> data/processed/indicadores_saude_mg.parquet
 
 # 2b. pipeline de EDUCAÇÃO
 # baixe manualmente do portal do INEP as planilhas de IDEB (anos iniciais e
@@ -72,6 +74,30 @@ python merge_fontes.py    # -> data/processed/fato_indicadores.parquet
 - **Município em 6 dígitos por enquanto** — a expansão para o código IBGE de 7
   dígitos acontece no join com a tabela oficial do IBGE (nunca calculando o
   dígito verificador), que também trará a população (denominador).
+
+### Indicadores de saúde (`indicadores_saude.py`)
+
+Agrega `data/interim/sinasc_mg.parquet` e `sim_mg.parquet` no grão
+município-ano (`cod_municipio_6` como texto + `ano`). Cada proporção usa como
+denominador **só os nascimentos com a informação válida** daquele campo —
+ignorado não entra nem no numerador nem no denominador.
+
+| Indicador | Numerador | Denominador |
+|-----------|-----------|-------------|
+| `nascidos_vivos` | registros do SINASC (ano do nascimento) | — |
+| `obitos_infantis` | óbitos do SIM com `obito_infantil` (0–364 dias; ano do óbito) | — |
+| `tmi` | óbitos infantis × 1000 | nascidos vivos no mesmo município-ano |
+| `prop_cesarea` | `PARTO = 2` | `PARTO` ∈ {1, 2} |
+| `prop_baixo_peso` | peso < 2.500 g | peso plausível (200–7.000 g) |
+| `prop_mae_adolescente` | idade da mãe ≤ 19 | idade plausível (10–60) |
+| `prop_prenatal_adequado` | 7+ consultas (`CONSULTAS = 4`) | `CONSULTAS` ∈ {1..4} |
+| `prop_mae_baixa_escolaridade` | menos de 8 anos de estudo (`ESCMAE` ∈ {1, 2, 3}) | `ESCMAE` ∈ {1..5} |
+
+Proporções em **percentual (0–100)**. A TMI usa óbitos e nascimentos do mesmo
+ano-calendário (forma direta, sem correção de sub-registro). Código de
+município com 7 dígitos é reduzido a 6 tirando o verificador — a mesma ponte
+do `merge_fontes.py`. Município-ano com óbito e sem nascido fica com TMI nula
+(e o script avisa).
 
 ### Educação (INEP)
 
@@ -192,12 +218,10 @@ ordem, e cada etapa imprime o que fez:
 1. Trazer a tabela do IBGE (código de 7 dígitos + população por município-ano)
    — vale tanto para saúde (hoje em 6 dígitos) quanto para completar a dimensão
    de município da educação.
-2. **Agregar saúde** para o grão município-ano: taxa de mortalidade infantil, %
-   cesárea, % baixo peso, gravidez na adolescência, cobertura pré-natal.
-3. Baixar os arquivos reais do INEP em `data/raw/edu/` e validar/ajustar os
+2. Baixar os arquivos reais do INEP em `data/raw/edu/` e validar/ajustar os
    nomes de coluna candidatos em `transform_edu.py` contra o layout real.
-4. Trazer a proxy socioeconômica (IDHM) para a análise de confounding.
-5. Modelar em **star schema** no PostgreSQL (`fato_indicadores`, já gerado
+3. Trazer a proxy socioeconômica (IDHM) para a análise de confounding.
+4. Modelar em **star schema** no PostgreSQL (`fato_indicadores`, já gerado
    pelo `merge_fontes.py`, + `dim_municipio`, `dim_tempo`) e carregar o
    `processed`.
-6. Dashboard (Streamlit) sobre o resultado da análise.
+5. Dashboard (Streamlit) sobre o resultado da análise.
