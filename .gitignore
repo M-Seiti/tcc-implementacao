@@ -1,0 +1,13 @@
+# dados (pesados e recriáveis pelo código — nunca versionar)
+data/
+# figuras geradas
+reports/figures/
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+# jupyter / editor
+.ipynb_checkpoints/
+.vscode/
