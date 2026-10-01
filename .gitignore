@@ -2,6 +2,7 @@
 data/
 # figuras geradas
 reports/figures/
+reports/qualidade/
 # python
 __pycache__/
 *.pyc

@@ -7,13 +7,15 @@ RAW = DATA_DIR / "raw"
 INTERIM = DATA_DIR / "interim"
 PROCESSED = DATA_DIR / "processed"
 FIGURES = BASE_DIR / "reports" / "figures"
+QUALIDADE = BASE_DIR / "reports" / "qualidade"
 
-for _p in (RAW, INTERIM, PROCESSED, FIGURES):
+for _p in (RAW, INTERIM, PROCESSED, FIGURES, QUALIDADE):
     _p.mkdir(parents=True, exist_ok=True)
 
 ESTADO = "MG"
 ANOS = range(2010, 2020)
 CNES_MES_REF = 12
+N_MUNICIPIOS_MG = 853
 
 COLS_SINASC = ["CODMUNRES", "DTNASC", "IDADEMAE", "ESCMAE",
                "PESO", "CONSULTAS", "PARTO"]
