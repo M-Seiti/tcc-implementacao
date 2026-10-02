@@ -18,6 +18,7 @@ tcc-saude-educacao/
 ├── transform_edu.py    # educação etapa 2: limpeza + indicadores município-ano -> data/interim, data/processed
 ├── eda_edu.py           # educação etapa 3: análise exploratória -> reports/figures
 ├── merge_fontes.py     # integração: 6 etapas de qualidade -> data/processed/fato_indicadores.parquet
+├── figuras_integracao.py # figuras da integração (pipeline, ponte, completude, funil da TMI)
 ├── data/
 │   ├── raw/            # cru, intocado (não versionado)
 │   │   └── edu/         # arquivos do INEP baixados manualmente (entrada do extract_edu.py)
@@ -53,6 +54,7 @@ python eda_edu.py         # explora e gera as figuras
 
 # 3. INTEGRAÇÃO saúde + educação (precisa dos dois parquets em data/processed)
 python merge_fontes.py    # -> data/processed/fato_indicadores.parquet
+python figuras_integracao.py  # -> reports/figures/integracao_*.png
 ```
 
 > Rode sempre da raiz do projeto. Os módulos ficam na raiz (não em `src/`), então
