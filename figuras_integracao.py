@@ -137,7 +137,8 @@ def ponte_codigo():
 # Completude por indicador e ano no fato: lacunas por desenho (IDEB bienal) ficam visíveis.
 def completude(fato):
     cols = [c for c in ORDEM_INDICADORES if c in fato.columns]
-    tabela = fato.groupby("ano")[cols].agg(lambda s: s.notna().mean() * 100).T
+    # notna() antes de agregar: colunas Float64/Int64 do INEP deixariam a tabela como object
+    tabela = (fato[cols].notna().groupby(fato["ano"]).mean() * 100).astype("float64").T
     fig, ax = plt.subplots(figsize=(11, 6.2))
     im = ax.imshow(tabela.values, cmap=RAMPA_AZUL, vmin=0, vmax=100, aspect="auto")
     ax.set_xticks(range(tabela.shape[1]), tabela.columns)
@@ -163,7 +164,8 @@ def completude(fato):
 
 # Funnel plot da TMI: a dispersão cresce quando há poucos nascidos (instabilidade de número pequeno).
 def funil_tmi(fato):
-    df = fato[fato["nascidos_vivos"] > 0][["nascidos_vivos", "obitos_infantis", "tmi"]].dropna()
+    df = (fato[["nascidos_vivos", "obitos_infantis", "tmi"]].astype("float64").dropna()
+          .query("nascidos_vivos > 0"))
     p = df["obitos_infantis"].sum() / df["nascidos_vivos"].sum()
     n = np.logspace(np.log10(df["nascidos_vivos"].min()), np.log10(df["nascidos_vivos"].max()), 300)
     dp = np.sqrt(p * (1 - p) / n)
