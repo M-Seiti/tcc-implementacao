@@ -7,3 +7,6 @@ PySUS>=2.0
 nest_asyncio>=1.5
 openpyxl>=3.1
 xlrd>=2.0          # .xls antigos do INEP (2010-2011)
+scipy>=1.11
+streamlit>=1.40
+plotly>=5.20

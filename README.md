@@ -19,6 +19,8 @@ tcc-saude-educacao/
 ├── eda_edu.py           # educação etapa 3: análise exploratória -> reports/figures
 ├── merge_fontes.py     # integração: 6 etapas de qualidade -> data/processed/fato_indicadores.parquet
 ├── figuras_integracao.py # figuras da integração (pipeline, ponte, completude, funil da TMI)
+├── correlacoes.py      # análise: 5 combinações saúde × educação (Spearman + Holm) -> processed + figures
+├── app_bi.py           # BI em Streamlit sobre as 5 combinações
 ├── data/
 │   ├── raw/            # cru, intocado (não versionado)
 │   │   └── edu/         # arquivos do INEP baixados manualmente (entrada do extract_edu.py)
@@ -55,6 +57,10 @@ python eda_edu.py         # explora e gera as figuras
 # 3. INTEGRAÇÃO saúde + educação (precisa dos dois parquets em data/processed)
 python merge_fontes.py    # -> data/processed/fato_indicadores.parquet
 python figuras_integracao.py  # -> reports/figures/integracao_*.png
+
+# 4. ANÁLISE e BI
+python correlacoes.py         # -> data/processed/correlacoes_*.csv + reports/figures/correlacoes_*.png
+streamlit run app_bi.py       # abre o BI no navegador (http://localhost:8501)
 ```
 
 > Rode sempre da raiz do projeto. Os módulos ficam na raiz (não em `src/`), então
@@ -220,15 +226,61 @@ ordem, e cada etapa imprime o que fez:
   município-ano têm menos de 100 nascidos vivos: é instabilidade de número
   pequeno, a ser tratada com **filtro de porte na análise**, não na integração.
 
+### Análise de correlação (`correlacoes.py`) e BI (`app_bi.py`)
+
+**As 5 combinações** — definidas antes de olhar os dados (evita "pescar" correlação entre os
+48 pares possíveis) e configuráveis em `PARES`, no topo de `correlacoes.py`:
+
+| # | Saúde | Educação | Sentido esperado | Por quê |
+|---|-------|----------|------------------|---------|
+| 1 | Mãe adolescente (%) | Abandono (%) | + | gravidez interrompe a trajetória escolar; evasão expõe à gravidez precoce |
+| 2 | Mãe com < 8 anos de estudo (%) | Distorção idade-série (%) | + | escolaridade intergeracional; também cruza SINASC × INEP |
+| 3 | Pré-natal 7+ consultas (%) | IDEB anos iniciais | + | atenção básica e anos iniciais são municipais: capacidade de gestão |
+| 4 | TMI (por mil) | IDEB anos iniciais | − | indicadores-síntese de cada área |
+| 5 | Baixo peso ao nascer (%) | Reprovação (%) | + | hipótese mais fraca no nível municipal; serve de contraste |
+
+**Decisões:**
+
+- **Unidade de análise: o município, com o período 2010–2019 consolidado**
+  (`data/processed/municipio_periodo.parquet`, 853 linhas). Correlacionar as 8.530 linhas
+  município-ano contaria o mesmo município 10 vezes como se fossem observações independentes.
+  A TMI do período soma óbitos e nascidos antes de dividir; as proporções de saúde são médias
+  ponderadas pelos nascidos; IDEB e taxas do INEP são a média dos anos disponíveis. Consolidar
+  também reduz a instabilidade de número pequeno (30 nascidos/ano viram 300 na década).
+- **ρ de Spearman** (relação monotônica, robusta a assimetria e extremos), com IC 95% por
+  transformação de Fisher (erro-padrão de Fieller, 1957).
+- **Correção de Holm** para os 5 testes (controla a chance de ao menos um falso positivo).
+- **Sensibilidade ao porte**: a análise é repetida só com municípios de ≥ 100 nascidos/ano.
+  Se o sinal se mantém, a conclusão não depende dos municípios minúsculos.
+- **Estabilidade no tempo**: a correlação também é calculada ano a ano (IDEB só nos anos ímpares).
+- **Sem controle socioeconômico**, por decisão de escopo com o orientador. Os resultados são
+  **associações**, não efeitos: saúde e educação podem andar juntas porque ambas acompanham
+  o desenvolvimento do município.
+
+**Saídas:** `correlacoes_periodo.csv` (os dois cenários de porte), `correlacoes_por_ano.csv`
+e as figuras `correlacoes_forest.png`, `correlacoes_dispersao.png` e `correlacoes_por_ano.png`.
+
+**BI (`streamlit run app_bi.py`).** Usa as mesmas funções do `correlacoes.py`, então os números
+do painel batem com os do texto. Filtros no topo valem para tudo: recorte temporal (período
+consolidado ou um ano), porte mínimo e município em destaque. Abas: resumo das 5 combinações
+(forest plot + tabela), uma aba por combinação (hipótese, ρ, IC, p de Holm, dispersão com a
+tendência por décimos, ρ ano a ano, tabela com download em CSV) e metodologia/limitações.
+
+**Limitações a declarar no texto:** falácia ecológica (unidade é o município, não o indivíduo);
+autocorrelação espacial (vizinhos se parecem, p-valores otimistas); coortes diferentes (os
+nascidos de um ano não são os alunos avaliados no mesmo ano); TMI pelo método direto, sem
+correção de sub-registro.
+
 ## Próximas etapas (ainda não no código)
 
 1. Trazer a tabela do IBGE (código de 7 dígitos + população por município-ano)
    — vale tanto para saúde (hoje em 6 dígitos) quanto para completar a dimensão
    de município da educação.
-2. Baixar os arquivos reais do INEP em `data/raw/edu/` e validar/ajustar os
-   nomes de coluna candidatos em `transform_edu.py` contra o layout real.
-3. Trazer a proxy socioeconômica (IDHM) para a análise de confounding.
+2. ~~Baixar os arquivos reais do INEP~~ — feito; o pipeline rodou com eles
+   (853 municípios, todas as invariantes da integração passaram).
+3. ~~Proxy socioeconômica (IDHM)~~ — fora do escopo por decisão com o orientador
+   (ver limitações da análise).
 4. Modelar em **star schema** no PostgreSQL (`fato_indicadores`, já gerado
    pelo `merge_fontes.py`, + `dim_municipio`, `dim_tempo`) e carregar o
    `processed`.
-5. Dashboard (Streamlit) sobre o resultado da análise.
+5. ~~Dashboard (Streamlit)~~ — feito em `app_bi.py`.
