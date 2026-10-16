@@ -2,8 +2,13 @@
 
 Pipeline reprodutível que extrai microdados públicos do DATASUS (SINASC, SIM,
 CNES) e do INEP para MG no período 2010–2019, trata os dados, integra as
-fontes num fato único e produz uma análise exploratória. Grão analítico:
-**município × ano**.
+fontes num fato único, analisa a associação entre saúde e educação e apresenta
+os resultados num BI em Streamlit. Grão analítico: **município × ano**.
+
+> 📘 **Documentação completa** — arquitetura, tratamento das fontes, integração,
+> método estatístico (Spearman, IC 95%, Holm), resultados, decisões de escopo e
+> limitações: [`docs/DOCUMENTACAO.md`](docs/DOCUMENTACAO.md). Este README é o
+> guia rápido.
 
 ## Estrutura
 
@@ -21,6 +26,8 @@ tcc-saude-educacao/
 ├── figuras_integracao.py # figuras da integração (pipeline, ponte, completude, funil da TMI)
 ├── correlacoes.py      # análise: 5 combinações saúde × educação (Spearman + Holm) -> processed + figures
 ├── app_bi.py           # BI em Streamlit sobre as 5 combinações
+├── docs/
+│   └── DOCUMENTACAO.md # documentação completa (método, estatística, resultados, decisões)
 ├── data/
 │   ├── raw/            # cru, intocado (não versionado)
 │   │   └── edu/         # arquivos do INEP baixados manualmente (entrada do extract_edu.py)
@@ -79,9 +86,9 @@ streamlit run app_bi.py       # abre o BI no navegador (http://localhost:8501)
 - **SIM: `TIPOBITO=2`** — só óbitos não-fetais entram na mortalidade infantil.
 - **Idade pela diferença de datas** — `DTOBITO − DTNASC`, mais confiável que o
   campo `IDADE` codificado. `between(0, 364)` descarta datas invertidas.
-- **Município em 6 dígitos por enquanto** — a expansão para o código IBGE de 7
-  dígitos acontece no join com a tabela oficial do IBGE (nunca calculando o
-  dígito verificador), que também trará a população (denominador).
+- **Município em 6 dígitos na saúde** — a ponte para o código IBGE de 7 dígitos
+  é feita no `merge_fontes.py`, truncando o código do INEP (nunca calculando o
+  dígito verificador).
 
 ### Indicadores de saúde (`indicadores_saude.py`)
 
@@ -129,15 +136,10 @@ do `merge_fontes.py`. Município-ano com óbito e sem nascido fica com TMI nula
   costumam vir quebradas por etapa/série; simplificamos para uma média por
   município-ano (`_agregar_municipio_ano`). Documentado no código caso a
   análise precise abrir por etapa depois.
-- **⚠️ Nomes de coluna ainda não validados contra arquivos reais** — como os
-  arquivos do INEP ainda não foram baixados neste projeto, as listas de
-  candidatos em `config.py` e nas funções `tratar_*` de `transform_edu.py`
-  são um ponto de partida baseado no padrão conhecido do INEP. A lógica foi
-  testada com arquivos sintéticos que imitam as manhas do formato (linhas de
-  título antes do cabeçalho, nomes de coluna diferentes entre edições,
-  sentinelas), mas precisa ser conferida assim que os arquivos reais
-  chegarem em `data/raw/edu/` — o código falha com um erro claro (listando
-  as colunas disponíveis) em vez de seguir com a coluna errada.
+- **Nomes de coluna validados contra os arquivos reais** do INEP (2010–2019):
+  o pipeline rodou com eles e gerou os 853 municípios. Se uma edição futura
+  mudar o layout, o código falha com um erro claro (listando as colunas
+  disponíveis) em vez de seguir com a coluna errada.
 
 ### Integração das fontes (`merge_fontes.py`)
 
