@@ -259,14 +259,32 @@ ordem, e cada etapa imprime o que fez:
   **associações**, não efeitos: saúde e educação podem andar juntas porque ambas acompanham
   o desenvolvimento do município.
 
-**Saídas:** `correlacoes_periodo.csv` (os dois cenários de porte), `correlacoes_por_ano.csv`
-e as figuras `correlacoes_forest.png`, `correlacoes_dispersao.png` e `correlacoes_por_ano.png`.
+**Classificação dos municípios:**
+
+- **Quadrantes (por combinação):** corte na mediana estadual de cada indicador, respeitando o
+  sentido de cada um (TMI alta é ruim; IDEB e pré-natal altos são bons). **Crítico** = pior que a
+  mediana nos dois; **Moderado – saúde** / **Moderado – educação** = pior só naquele;
+  **Não crítico** = em nenhum. Também se conta em quantas das 5 combinações cada município é crítico.
+- **Faixas (por indicador):** quartis orientados pela gravidade — **Adequada** (melhor 25%),
+  **Atenção**, **Alerta** e **Grave** (pior 25%). Classificação **relativa** (posição entre os
+  municípios de MG), não uma meta absoluta.
+
+**Saídas:** `correlacoes_periodo.csv` (os dois cenários de porte), `correlacoes_por_ano.csv`,
+`classificacao_municipios.csv` (quadrante em cada combinação, nº de combinações críticas e faixa em
+cada indicador) e as figuras `correlacoes_forest.png`, `correlacoes_dispersao.png`,
+`correlacoes_por_ano.png` e `correlacoes_quadrantes.png`.
 
 **BI (`streamlit run app_bi.py`).** Usa as mesmas funções do `correlacoes.py`, então os números
 do painel batem com os do texto. Filtros no topo valem para tudo: recorte temporal (período
 consolidado ou um ano), porte mínimo e município em destaque. Abas: resumo das 5 combinações
 (forest plot + tabela), uma aba por combinação (hipótese, ρ, IC, p de Holm, dispersão com a
-tendência por décimos, ρ ano a ano, tabela com download em CSV) e metodologia/limitações.
+tendência por décimos, ρ ano a ano, tabela com download em CSV), classificação em quadrantes
+em cada combinação, aba Classificação (municípios críticos em várias combinações e faixas por
+indicador) e metodologia/limitações.
+
+**Tema claro e escuro de alto contraste** (`.streamlit/config.toml`): texto com contraste acima
+de 17:1 nos dois modos e cores dos quadrantes validadas para daltonismo, com símbolo próprio em
+cada quadrante como segunda codificação. Para alternar: menu ⋮ → Settings → Theme.
 
 **Limitações a declarar no texto:** falácia ecológica (unidade é o município, não o indivíduo);
 autocorrelação espacial (vizinhos se parecem, p-valores otimistas); coortes diferentes (os

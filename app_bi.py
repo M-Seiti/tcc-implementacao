@@ -4,11 +4,22 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from config import ANOS
-from correlacoes import (PARES, ROTULOS, ALFA, AZUL, LARANJA, carregar, base_periodo, base_ano,
-                         filtrar_porte, correlacionar, correlacao_por_ano, tendencia_por_faixa)
+from correlacoes import (PARES, ROTULOS, ALFA, DIRECAO, QUADRANTES, FAIXAS, CORES_QUADRANTE, carregar,
+                         base_periodo, base_ano, filtrar_porte, correlacionar, correlacao_por_ano,
+                         tendencia_por_faixa, classificar_quadrantes, classificar_faixas, limites_faixas,
+                         tabela_classificacao)
 
 PERIODO = "2010–2019 consolidado"
 OPCOES_PORTE = [0, 10, 25, 50, 100, 250, 500]
+SIMBOLOS = {"Crítico": "diamond", "Moderado – saúde": "triangle-up",
+            "Moderado – educação": "square", "Não crítico": "circle"}
+BADGE_QUADRANTE = {"Crítico": "red", "Moderado – saúde": "orange",
+                   "Moderado – educação": "green", "Não crítico": "blue"}
+BADGE_FAIXA = {"Adequada": "blue", "Atenção": "gray", "Alerta": "orange", "Grave": "red"}
+PALETA = {
+    "light": {"ink": "#0b0b0b", "quiet": "#3f4651", "accent": "#1d4ed8", "grid": "#d5dae2"},
+    "dark": {"ink": "#f5f6f8", "quiet": "#c3c9d4", "accent": "#5b9cff", "grid": "#3a404c"},
+}
 
 st.set_page_config(page_title="Saúde × Educação em MG", page_icon="📊", layout="wide")
 
@@ -26,10 +37,16 @@ def por_ano(_fato, minimo):
     return correlacao_por_ano(_fato, minimo=minimo)
 
 
-# Cor de destaque legível no tema claro e no escuro.
-def cor_destaque():
-    tema = getattr(getattr(st.context, "theme", None), "type", "light")
-    return "#ffffff" if tema == "dark" else "#0b0b0b"
+# Tema ativo ("light" ou "dark"), para escolher cores com contraste em cada um.
+def tema():
+    t = getattr(getattr(st.context, "theme", None), "type", "light")
+    return "dark" if t == "dark" else "light"
+
+
+# Cores do tema ativo: texto, acento e quadrantes.
+def cores():
+    t = tema()
+    return {**PALETA[t], "quadrante": CORES_QUADRANTE[t]}
 
 
 # Formata número no padrão brasileiro.
@@ -39,71 +56,100 @@ def br(valor, casas=2):
     return f"{valor:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-# Layout base dos gráficos plotly.
+# Rótulo colorido (badge) com a cor do tema para um quadrante ou faixa.
+def badge(texto, cor):
+    return f":{cor}-badge[{texto}]"
+
+
+# Layout base dos gráficos plotly, com eixos e grade de alto contraste.
 def _layout(fig, altura, titulo_x="", titulo_y=""):
+    c = cores()
     fig.update_layout(height=altura, margin=dict(l=10, r=10, t=40, b=10), hovermode="closest",
-                      legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                      font=dict(size=14, color=c["ink"]),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=13)),
                       xaxis_title=titulo_x, yaxis_title=titulo_y)
+    eixo = dict(gridcolor=c["grid"], linecolor=c["quiet"], tickfont=dict(color=c["ink"]),
+                title_font=dict(color=c["ink"], size=14))
+    fig.update_xaxes(**eixo)
+    fig.update_yaxes(**eixo)
     return fig
 
 
 # Forest plot do recorte atual: ρ e IC 95%, ponto cheio quando significativa (Holm).
 def grafico_forest(res):
+    acc = cores()["accent"]
     r = res.dropna(subset=["rho"]).iloc[::-1]
     fig = go.Figure(go.Scatter(
         x=r["rho"], y=r["titulo"], mode="markers",
         error_x=dict(type="data", symmetric=False, array=r["ic_sup"] - r["rho"],
-                     arrayminus=r["rho"] - r["ic_inf"], thickness=2, width=0, color=AZUL),
-        marker=dict(size=12, color=AZUL, line=dict(color=AZUL, width=2),
+                     arrayminus=r["rho"] - r["ic_inf"], thickness=2.5, width=0, color=acc),
+        marker=dict(size=13, color=acc, line=dict(color=acc, width=2.5),
                     symbol=np.where(r["significativa"], "circle", "circle-open")),
         customdata=np.stack([r["ic_inf"], r["ic_sup"], r["p_holm"], r["n"]], axis=1),
         hovertemplate="<b>ρ = %{x:.2f}</b><br>IC 95%: %{customdata[0]:.2f} a %{customdata[1]:.2f}"
                       "<br>p (Holm) = %{customdata[2]:.3g}<br>n = %{customdata[3]}<extra>%{y}</extra>",
         showlegend=False))
-    fig.add_vline(x=0, line_width=1, line_color="gray")
+    fig.add_vline(x=0, line_width=1.5, line_color=cores()["quiet"])
     fig.update_xaxes(range=[-1, 1], zeroline=False)
     return _layout(fig, 360, "ρ de Spearman (IC 95%)")
 
 
-# Dispersão de uma combinação com a tendência por faixas e o município em destaque.
+# Dispersão em quadrantes: cor e símbolo por quadrante, medianas tracejadas, tendência e destaque.
 def grafico_dispersao(base, par, destaque):
+    c = cores()
     x, y = par["saude"], par["educacao"]
-    d = base.dropna(subset=[x, y])
-    fig = go.Figure(go.Scattergl(
-        x=d[x], y=d[y], mode="markers", name="municípios",
-        marker=dict(size=7, color=AZUL, opacity=0.5),
-        customdata=np.stack([d["nome_municipio"], d["nascidos_ano"]], axis=1),
-        hovertemplate=f"<b>%{{customdata[0]}}</b><br>{ROTULOS[x]}: %{{x:.2f}}<br>{ROTULOS[y]}: %{{y:.2f}}"
-                      "<br>nascidos/ano: %{customdata[1]:.0f}<extra></extra>"))
+    d = base.dropna(subset=[x, y]).assign(quadrante=classificar_quadrantes(base, par))
+    fig = go.Figure()
+    for q in QUADRANTES:
+        dq = d[d["quadrante"] == q]
+        fig.add_trace(go.Scatter(
+            x=dq[x], y=dq[y], mode="markers", name=f"{q} ({len(dq)})",
+            marker=dict(size=8, color=c["quadrante"][q], symbol=SIMBOLOS[q], opacity=0.85),
+            customdata=np.stack([dq["nome_municipio"], dq["nascidos_ano"]], axis=1) if len(dq) else None,
+            hovertemplate=f"<b>%{{customdata[0]}}</b> · {q}<br>{ROTULOS[x]}: %{{x:.2f}}"
+                          f"<br>{ROTULOS[y]}: %{{y:.2f}}<br>nascidos/ano: %{{customdata[1]:.0f}}<extra></extra>"))
+    fig.add_vline(x=d[x].median(), line_width=1.5, line_dash="dash", line_color=c["ink"])
+    fig.add_hline(y=d[y].median(), line_width=1.5, line_dash="dash", line_color=c["ink"])
     t = tendencia_por_faixa(d, x, y)
     if len(t):
-        fig.add_trace(go.Scatter(x=t[x], y=t[y], mode="lines+markers", name="mediana por décimo",
-                                 line=dict(color=LARANJA, width=3), marker=dict(size=7),
+        fig.add_trace(go.Scatter(x=t[x], y=t[y], mode="lines", name="tendência (mediana por décimo)",
+                                 line=dict(color=c["ink"], width=2.5),
                                  hovertemplate="mediana: %{y:.2f}<extra></extra>"))
     sel = d[d["nome_municipio"] == destaque]
     if len(sel):
-        cor = cor_destaque()
         fig.add_trace(go.Scatter(x=sel[x], y=sel[y], mode="markers+text", name=destaque,
                                  text=sel["nome_municipio"], textposition="top center",
-                                 textfont=dict(color=cor, size=13),
-                                 marker=dict(size=15, color=cor, line=dict(color=AZUL, width=3)),
+                                 textfont=dict(color=c["ink"], size=14),
+                                 marker=dict(size=18, color="rgba(0,0,0,0)", line=dict(color=c["ink"], width=3)),
                                  hovertemplate=f"<b>{destaque}</b><br>%{{x:.2f}} × %{{y:.2f}}<extra></extra>"))
-    return _layout(fig, 470, ROTULOS[x], ROTULOS[y])
+    return _layout(fig, 500, ROTULOS[x], ROTULOS[y])
 
 
 # ρ ano a ano de uma combinação, com o ano do recorte destacado.
 def grafico_por_ano(pa, par, ano_sel):
+    c = cores()
     d = pa[pa["id"] == par["id"]].dropna(subset=["rho"])
-    cores = [LARANJA if a == ano_sel else AZUL for a in d["ano"]]
+    marcas = [c["quadrante"]["Crítico"] if a == ano_sel else c["accent"] for a in d["ano"]]
     fig = go.Figure(go.Scatter(
-        x=d["ano"], y=d["rho"], mode="markers", marker=dict(size=10, color=cores),
+        x=d["ano"], y=d["rho"], mode="markers", marker=dict(size=11, color=marcas),
         error_y=dict(type="data", symmetric=False, array=d["ic_sup"] - d["rho"],
-                     arrayminus=d["rho"] - d["ic_inf"], thickness=2, width=0, color=AZUL),
+                     arrayminus=d["rho"] - d["ic_inf"], thickness=2.5, width=0, color=c["accent"]),
         customdata=d["n"], hovertemplate="<b>ρ = %{y:.2f}</b><br>%{x} · n = %{customdata}<extra></extra>",
         showlegend=False))
-    fig.add_hline(y=0, line_width=1, line_color="gray")
+    fig.add_hline(y=0, line_width=1.5, line_color=c["quiet"])
     fig.update_yaxes(range=[-1, 1]); fig.update_xaxes(dtick=1)
-    return _layout(fig, 470, "ano", "ρ de Spearman (IC 95%)")
+    return _layout(fig, 500, "ano", "ρ de Spearman (IC 95%)")
+
+
+# Contagem de municípios por quadrante, com o rótulo colorido de cada um.
+def resumo_quadrantes(quad):
+    total = int(quad.notna().sum())
+    cols = st.columns(4)
+    for col, q in zip(cols, QUADRANTES):
+        n = int((quad == q).sum())
+        col.markdown(badge(q, BADGE_QUADRANTE[q]))
+        col.metric(q, f"{n}", label_visibility="collapsed")
+        col.caption(f"{br(100 * n / total, 1) if total else '—'}% dos municípios")
 
 
 # Conteúdo de uma aba de combinação.
@@ -123,6 +169,13 @@ def aba_combinacao(par, base, res, pa, destaque, ano_sel):
     c[2].caption("significativa" if r["significativa"] else "não significativa")
     c[3].metric("Municípios (n)", f"{int(r['n'])}")
     c[3].caption("sentido confere com a hipótese" if r["sentido_confere"] else "sentido contrário à hipótese")
+
+    quad = classificar_quadrantes(base, par)
+    st.markdown("##### Classificação em quadrantes")
+    st.caption("Corte na mediana de cada indicador entre os municípios do recorte (linhas tracejadas). "
+               "Crítico: pior que a mediana nos dois; Moderado: pior em só um; Não crítico: em nenhum.")
+    resumo_quadrantes(quad)
+
     esq, dir_ = st.columns([3, 2])
     with esq:
         st.markdown("##### Cada ponto é um município")
@@ -132,9 +185,12 @@ def aba_combinacao(par, base, res, pa, destaque, ano_sel):
         st.markdown("##### A relação se mantém ano a ano?")
         st.plotly_chart(grafico_por_ano(pa, par, ano_sel), use_container_width=True,
                         theme="streamlit", key=f"ano_{par['id']}")
-    with st.expander("Ver os dados desta combinação"):
+    with st.expander("Ver os municípios desta combinação"):
+        filtro = st.multiselect("Quadrantes", QUADRANTES, default=QUADRANTES, key=f"q_{par['id']}")
         cols = ["nome_municipio", "cod_municipio", "nascidos_ano", par["saude"], par["educacao"]]
-        tabela = base[cols].dropna(subset=[par["saude"], par["educacao"]]).sort_values(par["saude"])
+        tabela = base[cols].assign(quadrante=quad).dropna(subset=["quadrante"])
+        tabela = tabela[tabela["quadrante"].isin(filtro)].sort_values(["quadrante", par["saude"]])
+        tabela = tabela.round({"nascidos_ano": 0, par["saude"]: 2, par["educacao"]: 2})
         tabela = tabela.rename(columns={"nome_municipio": "município", "cod_municipio": "código IBGE",
                                         "nascidos_ano": "nascidos/ano", **ROTULOS})
         st.dataframe(tabela, hide_index=True, use_container_width=True)
@@ -161,6 +217,66 @@ def aba_resumo(res):
         "forca": "força", "sentido_confere": "sentido confere?"})
 
 
+# Barras: quantos municípios são críticos em 0, 1, …, 5 combinações.
+def grafico_criticos(classe):
+    c = cores()
+    cont = classe["n_combinacoes_criticas"].value_counts().reindex(range(len(PARES) + 1), fill_value=0)
+    fig = go.Figure(go.Bar(
+        x=cont.index, y=cont.values, marker=dict(color=c["quadrante"]["Crítico"]),
+        text=cont.values, textposition="outside", textfont=dict(color=c["ink"], size=14),
+        hovertemplate="críticos em %{x} combinações: %{y} municípios<extra></extra>"))
+    fig.update_xaxes(dtick=1)
+    fig.update_yaxes(range=[0, cont.max() * 1.15 if cont.max() else 1])
+    return _layout(fig, 360, "nº de combinações em que o município é crítico", "municípios")
+
+
+# Aba de classificação: municípios críticos em várias combinações e faixas por indicador.
+def aba_classificacao(base):
+    classe = tabela_classificacao(base)
+    st.markdown("#### Municípios críticos em várias combinações")
+    st.caption("Para cada município, conta-se em quantas das 5 combinações ele está no quadrante Crítico "
+               "(pior que a mediana nos dois indicadores).")
+    esq, dir_ = st.columns([2, 3])
+    with esq:
+        st.plotly_chart(grafico_criticos(classe), use_container_width=True, theme="streamlit", key="criticos")
+    with dir_:
+        minimo = st.slider("Mostrar municípios críticos em pelo menos", 1, len(PARES), 3,
+                           format="%d combinações")
+        cols_q = [f"quadrante_{p['id']}" for p in PARES]
+        top = classe[classe["n_combinacoes_criticas"] >= minimo].sort_values(
+            ["n_combinacoes_criticas", "nascidos_ano"], ascending=[False, False])
+        top = top[["nome_municipio", "cod_municipio", "n_combinacoes_criticas", *cols_q]].rename(
+            columns={"nome_municipio": "município", "cod_municipio": "código IBGE",
+                     "n_combinacoes_criticas": "nº críticas", **{f"quadrante_{p['id']}": p["curto"] for p in PARES}})
+        st.caption(f"{len(top)} municípios")
+        st.dataframe(top, hide_index=True, use_container_width=True, height=300)
+
+    st.divider()
+    st.markdown("#### Faixas por indicador")
+    st.caption("Cada indicador é dividido em quatro faixas de igual tamanho (quartis), da melhor para a pior "
+               "situação. Em indicadores em que valor alto é bom (pré-natal, IDEB), a ordem se inverte.")
+    opcoes = list(DIRECAO)
+    col = st.selectbox("Indicador", opcoes, format_func=lambda k: ROTULOS[k], index=opcoes.index("tmi"))
+    serie = base[col]
+    faixa = classificar_faixas(serie, col)
+    limites = limites_faixas(serie, col)
+    cs = st.columns(4)
+    for cx, f, lim in zip(cs, FAIXAS, limites):
+        cx.markdown(badge(f, BADGE_FAIXA[f]))
+        cx.metric(f, f"{int((faixa == f).sum())}", label_visibility="collapsed")
+        cx.caption(f"{ROTULOS[col]}: {lim}")
+    filtro = st.multiselect("Faixas", FAIXAS, default=FAIXAS[2:], key="faixas_sel")
+    tabela = base[["nome_municipio", "cod_municipio", "nascidos_ano", col]].assign(faixa=faixa)
+    tabela = tabela[tabela["faixa"].isin(filtro)].sort_values(col, ascending=DIRECAO[col] < 0)
+    tabela = tabela.round({"nascidos_ano": 0, col: 2})
+    tabela = tabela.rename(columns={"nome_municipio": "município", "cod_municipio": "código IBGE",
+                                    "nascidos_ano": "nascidos/ano", col: ROTULOS[col]})
+    st.dataframe(tabela, hide_index=True, use_container_width=True, height=320)
+    st.download_button("Baixar classificação completa (CSV)",
+                       classe.to_csv(index=False).encode("utf-8"),
+                       file_name="classificacao_municipios.csv", mime="text/csv", key="csv_classe")
+
+
 # Aba de metodologia e limitações.
 def aba_metodologia():
     st.markdown("""
@@ -178,6 +294,15 @@ o mesmo município 10 vezes e reduz a instabilidade de município pequeno.
 **Correlação.** ρ de Spearman (relação monotônica, robusta a extremos e assimetria), IC 95% por
 transformação de Fisher. As 5 combinações foram escolhidas **antes** de olhar os dados; o p-valor é
 ajustado por **Holm** para os 5 testes.
+
+**Quadrantes.** Em cada combinação, o município é comparado com a mediana dos municípios do recorte
+em cada indicador, considerando o sentido de cada um (TMI alta é ruim; IDEB alto é bom):
+**Crítico** = pior que a mediana nos dois; **Moderado – saúde** ou **Moderado – educação** = pior
+só naquele; **Não crítico** = em nenhum dos dois.
+
+**Faixas.** Cada indicador é dividido em quartis: **Adequada** (melhor 25%), **Atenção**,
+**Alerta** e **Grave** (pior 25%). É uma classificação **relativa**: indica a posição do
+município entre os de MG, e não o cumprimento de uma meta absoluta.
 
 **Porte mínimo.** Exclui municípios com poucos nascidos por ano, onde a taxa oscila por acaso.
 Compare o resultado com e sem filtro: se o sinal se mantém, a conclusão é robusta.
@@ -201,7 +326,8 @@ def main():
         st.stop()
 
     st.title("Saúde × Educação nos municípios de Minas Gerais")
-    st.caption("853 municípios · 2010–2019 · DATASUS (SINASC/SIM) + INEP · correlação de Spearman")
+    st.caption("853 municípios · 2010–2019 · DATASUS (SINASC/SIM) + INEP · correlação de Spearman · "
+               "tema claro/escuro: menu ⋮ → Settings → Theme")
 
     f1, f2, f3 = st.columns([1.2, 1.4, 2])
     recorte = f1.selectbox("Recorte temporal", [PERIODO] + [str(a) for a in ANOS])
@@ -222,13 +348,16 @@ def main():
     k[2].metric("TMI do recorte (por mil)", br(base["obitos_infantis"].sum() / nascidos * 1000 if nascidos else np.nan, 1))
     k[3].metric("IDEB anos iniciais (mediana)", br(base["IDEB_ANOS_INICIAIS"].median(), 1))
 
-    abas = st.tabs(["Resumo"] + [f"{i}. {p['curto']}" for i, p in enumerate(PARES, 1)] + ["Metodologia"])
+    abas = st.tabs(["Resumo"] + [f"{i}. {p['curto']}" for i, p in enumerate(PARES, 1)]
+                   + ["Classificação", "Metodologia"])
     with abas[0]:
         aba_resumo(res)
-    for aba, par in zip(abas[1:-1], PARES):
+    for aba, par in zip(abas[1:6], PARES):
         with aba:
             aba_combinacao(par, base, res, pa, destaque, ano_sel)
-    with abas[-1]:
+    with abas[6]:
+        aba_classificacao(base)
+    with abas[7]:
         aba_metodologia()
 
 

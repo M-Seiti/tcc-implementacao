@@ -525,7 +525,36 @@ saúde, e a linha liga a **mediana** dos dois eixos em cada grupo.
 modelo. A mediana resiste a extremos, pelo mesmo motivo de usar Spearman. É só descritiva e não
 entra nos testes.
 
-### 8.11 Resumo do método
+### 8.11 Classificação dos municípios: quadrantes e faixas
+
+**Quadrantes (por combinação).** Cada município é comparado com a **mediana** dos municípios do
+recorte em cada indicador do par, respeitando o sentido de cada um (`DIRECAO` em
+`correlacoes.py`: TMI, baixo peso, mãe adolescente, baixa escolaridade, distorção, abandono e
+reprovação — maior é pior; pré-natal e IDEB — maior é melhor):
+
+| Quadrante | Regra |
+|---|---|
+| **Crítico** | pior que a mediana na saúde **e** na educação |
+| **Moderado – saúde** | pior só no indicador de saúde |
+| **Moderado – educação** | pior só no indicador de educação |
+| **Não crítico** | melhor ou igual à mediana nos dois |
+
+Para cada município conta-se ainda em quantas das 5 combinações ele é **Crítico** (0 a 5), o que
+aponta onde saúde e educação estão piores ao mesmo tempo, em vários aspectos.
+
+**Faixas (por indicador).** Cada indicador é dividido em **quartis** orientados pela gravidade:
+**Adequada** (melhor 25%), **Atenção**, **Alerta** e **Grave** (pior 25%). A classificação usa a
+posição percentual do município, de modo que valores empatados (ex.: muitos abandonos iguais a
+zero) caem na mesma faixa.
+
+**Por que mediana e quartis:** são cortes **robustos** a valores extremos (coerentes com o uso de
+Spearman) e dividem os municípios em grupos de tamanho conhecido. A classificação é **relativa**:
+indica a posição do município entre os de MG, e não o cumprimento de uma meta absoluta (como uma
+meta de TMI). É **descritiva** — não é um teste estatístico e não entra na correção de Holm.
+
+**Saída:** `data/processed/classificacao_municipios.csv` e a figura `correlacoes_quadrantes.png`.
+
+### 8.12 Resumo do método
 
 > Consolidamos o período para ter observações independentes e taxas estáveis; usamos Spearman
 > por ser robusto a extremos e a relações não lineares; reportamos o IC 95% para mostrar a
@@ -609,6 +638,7 @@ gravidez na adolescência, por exemplo, é um problema das duas áreas.
 | `correlacoes_forest.png` | ρ e IC 95% das 5 combinações, nos dois cenários de porte |
 | `correlacoes_dispersao.png` | dispersão de cada combinação, com a tendência por décimos |
 | `correlacoes_por_ano.png` | ρ ano a ano de cada combinação |
+| `correlacoes_quadrantes.png` | municípios coloridos por quadrante em cada combinação, com as medianas |
 
 O **funnel plot** marca, em torno da TMI estadual, os limites de variação esperada por acaso
 (binomiais de 95% e 99,8%). Pontos fora dos limites nos municípios pequenos são esperados e
@@ -622,7 +652,15 @@ não indicam erro — é a justificativa visual para consolidar o período.
 - **Aba Resumo:** forest plot das 5 combinações e tabela com ρ, IC, p de Holm, força e sentido.
 - **Uma aba por combinação:** hipótese, ρ, IC, p ajustado e n; dispersão com a tendência e o
   município destacado; ρ ano a ano; tabela dos dados com download em CSV.
-- **Aba Metodologia:** resumo do método e das limitações.
+- **Classificação em quadrantes** em cada aba de combinação: contagem por quadrante e dispersão
+  colorida por quadrante (cor + símbolo), com as medianas tracejadas; lista de municípios filtrável.
+- **Aba Classificação:** quantos municípios são críticos em 0 a 5 combinações, lista dos mais
+  críticos e faixas (Adequada, Atenção, Alerta, Grave) de qualquer indicador, com download.
+- **Aba Metodologia:** resumo do método, da classificação e das limitações.
+- **Tema claro e escuro de alto contraste** (`.streamlit/config.toml`; ⋮ → Settings → Theme):
+  texto com contraste acima de 17:1, cores de marca acima de 3:1 sobre o fundo e cores dos
+  quadrantes validadas para daltonismo, com símbolo próprio em cada quadrante (losango, triângulo,
+  quadrado, círculo) como segunda codificação.
 
 ---
 

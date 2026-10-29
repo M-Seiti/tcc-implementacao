@@ -1,0 +1,45 @@
+# Tema do BI: claro e escuro de alto contraste (texto ≥ 17:1, cores de marca ≥ 3:1 no fundo).
+# O usuário alterna em ⋮ → Settings → Theme (Light / Dark / System).
+
+[theme]
+font = "sans-serif"
+baseRadius = "small"
+showWidgetBorder = true
+
+[theme.light]
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#eef1f5"
+textColor = "#0b0b0b"
+primaryColor = "#1d4ed8"
+linkColor = "#1d4ed8"
+borderColor = "#6b7280"
+dataframeHeaderBackgroundColor = "#e3e7ee"
+redColor = "#b42318"
+redTextColor = "#8f1c13"
+orangeColor = "#cf6f00"
+orangeTextColor = "#8a4a00"
+greenColor = "#0f8f6f"
+greenTextColor = "#0a6650"
+blueColor = "#1d4ed8"
+blueTextColor = "#1a3fae"
+grayColor = "#4b5563"
+grayTextColor = "#1f2937"
+
+[theme.dark]
+backgroundColor = "#0f1115"
+secondaryBackgroundColor = "#1c2029"
+textColor = "#f5f6f8"
+primaryColor = "#5b9cff"
+linkColor = "#7fb2ff"
+borderColor = "#8b93a1"
+dataframeHeaderBackgroundColor = "#262b36"
+redColor = "#e5484d"
+redTextColor = "#ff8a8d"
+orangeColor = "#c98500"
+orangeTextColor = "#ffc35c"
+greenColor = "#199e70"
+greenTextColor = "#5fd3a7"
+blueColor = "#3987e5"
+blueTextColor = "#8dbcff"
+grayColor = "#9ca3af"
+grayTextColor = "#e5e7eb"

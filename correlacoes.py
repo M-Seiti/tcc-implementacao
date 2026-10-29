@@ -46,6 +46,23 @@ PORTE_SENSIBILIDADE = 100
 N_MINIMO = 30
 ALFA = 0.05
 
+# +1: valor maior é pior; -1: valor maior é melhor
+DIRECAO = {
+    "tmi": +1, "prop_cesarea": +1, "prop_baixo_peso": +1, "prop_mae_adolescente": +1,
+    "prop_prenatal_adequado": -1, "prop_mae_baixa_escolaridade": +1,
+    "IDEB_ANOS_INICIAIS": -1, "IDEB_ANOS_FINAIS": -1,
+    "TAXA_DISTORCAO": +1, "TAXA_ABANDONO": +1, "TAXA_REPROVACAO": +1,
+}
+QUADRANTES = ["Crítico", "Moderado – saúde", "Moderado – educação", "Não crítico"]
+FAIXAS = ["Adequada", "Atenção", "Alerta", "Grave"]
+CORES_QUADRANTE = {
+    "light": {"Crítico": "#b42318", "Moderado – saúde": "#cf6f00",
+              "Moderado – educação": "#0f8f6f", "Não crítico": "#1d4ed8"},
+    "dark": {"Crítico": "#e5484d", "Moderado – saúde": "#c98500",
+             "Moderado – educação": "#199e70", "Não crítico": "#3987e5"},
+}
+MARCADORES_QUADRANTE = {"Crítico": "D", "Moderado – saúde": "^", "Moderado – educação": "s", "Não crítico": "o"}
+
 AZUL, LARANJA, CINZA = "#2a78d6", "#eb6834", "#a3a29d"
 TEXTO, TEXTO_2, GRADE, SUPERFICIE = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 
@@ -149,6 +166,51 @@ def correlacao_por_ano(fato, pares=PARES, minimo=0):
     return pd.DataFrame(linhas)
 
 
+# Marca os municípios do lado pior da mediana do recorte (nulo onde falta o valor).
+def pior_que_mediana(serie, col):
+    med = serie.median()
+    pior = serie > med if DIRECAO[col] > 0 else serie < med
+    return pior.where(serie.notna())
+
+
+# Quadrante de cada município numa combinação: corte na mediana de cada indicador.
+def classificar_quadrantes(base, par):
+    ps = pior_que_mediana(base[par["saude"]], par["saude"])
+    pe = pior_que_mediana(base[par["educacao"]], par["educacao"])
+    ok = ps.notna() & pe.notna()
+    ps, pe = ps.fillna(False).astype(bool), pe.fillna(False).astype(bool)
+    q = np.select([ps & pe, ps & ~pe, ~ps & pe], QUADRANTES[:3], default=QUADRANTES[3])
+    return pd.Series(q, index=base.index).where(ok)
+
+
+# Faixa de cada município num indicador, por quartil, com "Grave" sempre no pior quarto.
+def classificar_faixas(serie, col):
+    # posição percentual em vez de cortes por valor: empates (ex.: muitos abandonos = 0) caem na mesma faixa
+    posicao = (serie * DIRECAO[col]).rank(pct=True, method="average")
+    return pd.cut(posicao, [0, 0.25, 0.5, 0.75, 1], labels=FAIXAS, include_lowest=True)
+
+
+# Limites de cada faixa na unidade original do indicador, para exibição.
+def limites_faixas(serie, col):
+    p25, p50, p75 = serie.quantile([0.25, 0.5, 0.75]).tolist()
+    f = lambda v: f"{v:.2f}".replace(".", ",")
+    if DIRECAO[col] > 0:
+        return [f"até {f(p25)}", f"{f(p25)} a {f(p50)}", f"{f(p50)} a {f(p75)}", f"acima de {f(p75)}"]
+    return [f"acima de {f(p75)}", f"{f(p50)} a {f(p75)}", f"{f(p25)} a {f(p50)}", f"até {f(p25)}"]
+
+
+# Tabela por município: quadrante em cada combinação, nº de combinações críticas e faixa em cada indicador.
+def tabela_classificacao(base, pares=PARES):
+    out = base[["cod_municipio_6", "cod_municipio", "nome_municipio", "nascidos_ano"]].copy()
+    for p in pares:
+        out[f"quadrante_{p['id']}"] = classificar_quadrantes(base, p)
+    cols_q = [f"quadrante_{p['id']}" for p in pares]
+    out["n_combinacoes_criticas"] = (out[cols_q] == QUADRANTES[0]).sum(axis=1)
+    for col in DIRECAO:
+        out[f"faixa_{col}"] = classificar_faixas(base[col], col)
+    return out
+
+
 # Medianas de y por faixa (quantis) de x: tendência robusta sem ajustar modelo.
 def tendencia_por_faixa(base, x, y, faixas=10):
     d = base[[x, y]].dropna()
@@ -250,6 +312,38 @@ def figura_por_ano(por_ano):
     _salvar(fig, "correlacoes_por_ano.png")
 
 
+# Quadrantes de cada combinação: cor e marcador por quadrante, linhas nas medianas.
+def figura_quadrantes(base):
+    _estilo()
+    fig, eixos = plt.subplots(2, 3, figsize=(15, 9.4))
+    cores = CORES_QUADRANTE["light"]
+    for ax, p in zip(eixos.flat, PARES):
+        quad = classificar_quadrantes(base, p)
+        for q in QUADRANTES:
+            d = base[quad == q]
+            ax.scatter(d[p["saude"]], d[p["educacao"]], s=14, color=cores[q], marker=MARCADORES_QUADRANTE[q],
+                       alpha=0.75, lw=0, label=f"{q} ({len(d)})")
+        ax.axvline(base[p["saude"]].median(), color=TEXTO, lw=1, ls="--")
+        ax.axhline(base[p["educacao"]].median(), color=TEXTO, lw=1, ls="--")
+        ax.set_xlabel(ROTULOS[p["saude"]]); ax.set_ylabel(ROTULOS[p["educacao"]])
+        ax.grid(color=GRADE, lw=0.6); ax.set_axisbelow(True)
+        ax.set_title(p["titulo"])
+        ax.legend(fontsize=8, frameon=False, loc="best", handletextpad=0.3)
+    eixo_nota = eixos.flat[-1]
+    eixo_nota.axis("off")
+    eixo_nota.text(0, 0.9, "Como ler", fontsize=11, weight="bold", va="top")
+    eixo_nota.text(0, 0.78, "• linhas tracejadas: mediana estadual\n  de cada indicador\n"
+                   "• Crítico: pior que a mediana nos dois\n"
+                   "• Moderado: pior em só um dos dois\n  (saúde ou educação)\n"
+                   "• Não crítico: melhor ou igual à\n  mediana nos dois\n"
+                   "• entre parênteses: nº de municípios",
+                   fontsize=9.5, color=TEXTO_2, va="top", linespacing=1.5)
+    fig.suptitle("Classificação dos municípios em quadrantes, por combinação (2010–2019 consolidado)",
+                 x=0.01, ha="left", fontsize=14, weight="bold")
+    fig.tight_layout()
+    _salvar(fig, "correlacoes_quadrantes.png")
+
+
 # Roda a análise completa: base do período, correlações, sensibilidade, ano a ano e figuras.
 def main():
     fato = carregar()
@@ -273,10 +367,21 @@ def main():
         print(tabela.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
     print("\nAssociação municipal, sem controle socioeconômico: não indica causalidade.")
 
+    classificacao = tabela_classificacao(base)
+    classificacao.to_csv(PROCESSED / "classificacao_municipios.csv", index=False)
+    print("\nQuadrantes por combinação (corte na mediana estadual de cada indicador):")
+    contagem = pd.DataFrame({p["titulo"]: classificacao[f"quadrante_{p['id']}"].value_counts()
+                             for p in PARES}).reindex(QUADRANTES).fillna(0).astype(int).T
+    print(contagem.to_string())
+    print("\nMunicípios por nº de combinações em que são críticos:")
+    print(classificacao["n_combinacoes_criticas"].value_counts().sort_index().to_string())
+    print(f"-> {PROCESSED / 'classificacao_municipios.csv'}")
+
     print("\nFiguras:")
     figura_forest(resultados)
     figura_dispersao(base, resultados)
     figura_por_ano(por_ano)
+    figura_quadrantes(base)
     return base, resultados, por_ano
 
 
